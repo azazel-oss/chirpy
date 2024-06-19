@@ -3,11 +3,19 @@ package main
 import "net/http"
 
 func main() {
-	serveMux := http.NewServeMux()
+	mux := http.NewServeMux()
 	server := http.Server{
-		Handler: serveMux,
+		Handler: mux,
 		Addr:    "localhost:8080",
 	}
-	serveMux.Handle("/", http.FileServer(http.Dir(".")))
+	mux.Handle("/app/*", http.StripPrefix("/app", http.FileServer(http.Dir("."))))
+	mux.HandleFunc("/healthz", handleReadinessEndpoint)
+
 	server.ListenAndServe()
+}
+
+func handleReadinessEndpoint(response http.ResponseWriter, request *http.Request) {
+	response.Header().Add("Content-Type", "text/plain; charset=utf-8")
+	response.WriteHeader(200)
+	response.Write([]byte("OK"))
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 )
 
 type apiConfig struct {
@@ -64,7 +65,7 @@ func handleValidateChirp(w http.ResponseWriter, r *http.Request) {
 		Error string `json:"error"`
 	}
 	type ValidResponse struct {
-		Valid bool `json:"valid"`
+		CleanedBody string `json:"cleaned_body"`
 	}
 	bodyJson := RequestBody{}
 	decoder := json.NewDecoder(r.Body)
@@ -77,30 +78,50 @@ func handleValidateChirp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(bodyJson.Body) > 140 {
-		respBody := ErrorResponse{
-			Error: "Chirp is too long",
-		}
-		dat, err := json.Marshal(respBody)
-		if err != nil {
-			log.Printf("Error marshalling JSON: %s", err)
-			w.WriteHeader(500)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(400)
-		w.Write(dat)
+		respondWithError(w, 400, "Chirp is too long")
 		return
 	}
-	respValid := ValidResponse{
-		Valid: true,
+	chunks := strings.Split(bodyJson.Body, " ")
+	profanes := []string{"kerfuffle", "sharbert", "fornax"}
+	for i, chunk := range chunks {
+		for _, profane := range profanes {
+			if strings.EqualFold(strings.ToLower(chunk), strings.ToLower(profane)) {
+				chunks[i] = "****"
+			}
+		}
 	}
-	dat, err := json.Marshal(respValid)
+	respValid := ValidResponse{
+		CleanedBody: strings.Join(chunks, " "),
+	}
+	respondWithJson(w, 200, respValid)
+}
+
+func respondWithError(w http.ResponseWriter, code int, msg string) {
+	type ErrorResponse struct {
+		Error string `json:"error"`
+	}
+	respBody := ErrorResponse{
+		Error: msg,
+	}
+	dat, err := json.Marshal(respBody)
 	if err != nil {
 		log.Printf("Error marshalling JSON: %s", err)
 		w.WriteHeader(500)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
+	w.WriteHeader(code)
+	w.Write(dat)
+}
+
+func respondWithJson(w http.ResponseWriter, code int, payload interface{}) {
+	dat, err := json.Marshal(payload)
+	if err != nil {
+		log.Printf("Error marshalling JSON: %s", err)
+		respondWithError(w, http.StatusInternalServerError, "Internal Server Error")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
 	w.Write(dat)
 }

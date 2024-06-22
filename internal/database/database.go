@@ -86,25 +86,40 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 func (db *DB) ensureDB() error {
 	db.mux.Lock()
 	defer db.mux.Unlock()
-	if _, err := os.Stat(db.path); errors.Is(err, os.ErrNotExist) {
-		file, err := os.Create(db.path)
-		if err != nil {
-			return err
-		}
-		// Initialize with an empty structure
-		dbStructure := DBStructure{
-			Chirps: make(map[int]Chirp),
-		}
 
-		// Convert the structure to JSON and write it to the file
-		encoder := json.NewEncoder(file)
-		if err := encoder.Encode(dbStructure); err != nil {
-			file.Close()
-			return err
+	stat, err := os.Stat(db.path)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return db.initializeDB()
 		}
-
-		file.Close()
+		return err
 	}
+
+	if stat.Size() == 0 {
+		return db.initializeDB()
+	}
+
+	return nil
+}
+
+func (db *DB) initializeDB() error {
+	file, err := os.Create(db.path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	// Initialize with an empty structure
+	dbStructure := DBStructure{
+		Chirps: make(map[int]Chirp),
+	}
+
+	// Convert the structure to JSON and write it to the file
+	encoder := json.NewEncoder(file)
+	if err := encoder.Encode(dbStructure); err != nil {
+		return err
+	}
+
 	return nil
 }
 

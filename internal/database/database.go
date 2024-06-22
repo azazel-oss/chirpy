@@ -5,7 +5,10 @@ import (
 	"errors"
 	"os"
 	"sort"
+	"strings"
 	"sync"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type DB struct {
@@ -18,8 +21,15 @@ type Chirp struct {
 	Id   int    `json:"id"`
 }
 
+type User struct {
+	Password string `json:"password"`
+	Email    string `json:"email"`
+	Id       int    `json:"id"`
+}
+
 type DBStructure struct {
 	Chirps map[int]Chirp `json:"chirps"`
+	Users  map[int]User  `json:"users"`
 }
 
 // NewDB creates a new database connection
@@ -63,6 +73,62 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 	return chirp, nil
 }
 
+// CreateUser creates a new user and saves it to disk
+func (db *DB) CreateUser(email string, password string) (User, error) {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	database, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+
+	max := 0
+	for key, value := range database.Users {
+		if key > max {
+			max = key
+		}
+		if strings.EqualFold(value.Email, email) {
+			return User{}, errors.New("a user with this email already exists")
+		}
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 10)
+	if err != nil {
+		return User{}, err
+	}
+	user := User{
+		Password: string(hashedPassword),
+		Email:    email,
+		Id:       max + 1,
+	}
+	database.Users[user.Id] = user
+	err = db.writeDB(database)
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
+func (db *DB) LoginUser(email string, password string) (User, error) {
+	db.mux.RLock()
+	defer db.mux.RUnlock()
+	database, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+	user := User{}
+	for _, value := range database.Users {
+		if strings.EqualFold(value.Email, email) {
+			user = value
+		}
+	}
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	if err != nil {
+		return User{}, err
+	}
+	return user, nil
+}
+
 // GetChirps returns all chirps in the database
 func (db *DB) GetChirps() ([]Chirp, error) {
 	db.mux.RLock()
@@ -80,6 +146,21 @@ func (db *DB) GetChirps() ([]Chirp, error) {
 		return chirps[i].Id < chirps[j].Id
 	})
 	return chirps, nil
+}
+
+func (db *DB) GetSingleChirp(id int) (Chirp, error) {
+	db.mux.RLock()
+	defer db.mux.RUnlock()
+
+	database, err := db.loadDB()
+	if err != nil {
+		return Chirp{}, err
+	}
+	chirp, ok := database.Chirps[id]
+	if !ok {
+		return Chirp{}, errors.New("doesn't exist")
+	}
+	return chirp, nil
 }
 
 // ensureDB creates a new database file if it doesn't exist
@@ -112,6 +193,7 @@ func (db *DB) initializeDB() error {
 	// Initialize with an empty structure
 	dbStructure := DBStructure{
 		Chirps: make(map[int]Chirp),
+		Users:  map[int]User{},
 	}
 
 	// Convert the structure to JSON and write it to the file

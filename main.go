@@ -65,6 +65,15 @@ func (a *apiConfig) polkaUpgradeHandler(w http.ResponseWriter, r *http.Request) 
 		} `json:"data"`
 	}
 	bodyJson := RequestBody{}
+	if len(r.Header.Get("Authorization")) == 0 {
+		respondWithError(w, http.StatusUnauthorized, "You aren't authorized")
+		return
+	}
+	apiToken := strings.Split(r.Header.Get("Authorization"), " ")[1]
+	if !strings.EqualFold(apiToken, os.Getenv("POLKA_API_KEY")) {
+		respondWithError(w, http.StatusUnauthorized, "You aren't authorized")
+		return
+	}
 	err := json.NewDecoder(r.Body).Decode(&bodyJson)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "couldn't convert body")

@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -381,11 +382,44 @@ func (a *apiConfig) createChirps(w http.ResponseWriter, r *http.Request) {
 	respondWithJson(w, 201, chirp)
 }
 
-func (a *apiConfig) fetchChirps(w http.ResponseWriter, _ *http.Request) {
+func (a *apiConfig) fetchChirps(w http.ResponseWriter, r *http.Request) {
 	chirps, err := a.database.GetChirps()
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Internal server error")
 		return
 	}
+	authorId := r.URL.Query().Get("author_id")
+	sortQuery := r.URL.Query().Get("sort")
+	if len(sortQuery) > 0 {
+		if sortQuery == "asc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[j].Id > chirps[i].Id
+			})
+			respondWithJson(w, http.StatusOK, chirps)
+		}
+		if sortQuery == "desc" {
+			sort.Slice(chirps, func(i, j int) bool {
+				return chirps[j].Id < chirps[i].Id
+			})
+			respondWithJson(w, http.StatusOK, chirps)
+		}
+		return
+	}
+	if len(authorId) > 0 {
+		authorIdInt, err := strconv.Atoi(authorId)
+		if err != nil {
+			respondWithError(w, http.StatusBadRequest, "the author id is not well formatted")
+			return
+		}
+		response := []database.Chirp{}
+		for _, value := range chirps {
+			if value.AuthorId == authorIdInt {
+				response = append(response, value)
+			}
+		}
+		respondWithJson(w, http.StatusOK, response)
+		return
+	}
+
 	respondWithJson(w, http.StatusOK, chirps)
 }

@@ -32,6 +32,7 @@ type User struct {
 	Email          string    `json:"email"`
 	RefreshToken   string    `json:"refresh_token"`
 	Id             int       `json:"id"`
+	IsRedUser      bool      `json:"is_chirpy_red"`
 }
 
 type DBStructure struct {
@@ -98,6 +99,27 @@ func (db *DB) DeleteChirp(id int, authorId int) error {
 			}
 		}
 	}
+	db.writeDB(database)
+	return nil
+}
+
+func (db *DB) UpgradeUserToRed(id int) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	database, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+
+	user := User{}
+	for _, value := range database.Users {
+		if value.Id == id {
+			user = value
+			user.IsRedUser = true
+		}
+	}
+	database.Users[user.Id] = user
 	db.writeDB(database)
 	return nil
 }

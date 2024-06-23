@@ -50,10 +50,36 @@ func main() {
 	mux.HandleFunc("POST /api/refresh", apiCfg.generateAccessToken)
 	mux.HandleFunc("POST /api/revoke", apiCfg.revokeUser)
 	mux.HandleFunc("/api/login", apiCfg.loginUser)
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.polkaUpgradeHandler)
 	mux.HandleFunc("/api/reset", apiCfg.handleResetEndpoint)
 
 	log.Println("Starting server on :8080")
 	server.ListenAndServe()
+}
+
+func (a *apiConfig) polkaUpgradeHandler(w http.ResponseWriter, r *http.Request) {
+	type RequestBody struct {
+		Event string `json:"event"`
+		Data  struct {
+			UserID int `json:"user_id"`
+		} `json:"data"`
+	}
+	bodyJson := RequestBody{}
+	err := json.NewDecoder(r.Body).Decode(&bodyJson)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "couldn't convert body")
+		return
+	}
+	if strings.EqualFold(bodyJson.Event, "user.upgraded") {
+		err := a.database.UpgradeUserToRed(bodyJson.Data.UserID)
+		if err != nil {
+			respondWithError(w, http.StatusNotFound, "")
+			return
+		}
+		respondWithJson(w, http.StatusNoContent, nil)
+	} else {
+		respondWithJson(w, http.StatusNoContent, nil)
+	}
 }
 
 func (a *apiConfig) revokeUser(w http.ResponseWriter, r *http.Request) {
@@ -101,8 +127,9 @@ func (a *apiConfig) generateAccessToken(w http.ResponseWriter, r *http.Request) 
 
 func (a *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 	type ResponseBody struct {
-		Email string `json:"email"`
-		Id    int    `json:"id"`
+		Email        string `json:"email"`
+		Id           int    `json:"id"`
+		IsChirpyUser bool   `json:"is_chirpy_red"`
 	}
 	type RequestBody struct {
 		Email    string `json:"email"`
@@ -135,8 +162,9 @@ func (a *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 
 	response := ResponseBody{
-		Email: user.Email,
-		Id:    user.Id,
+		Email:        user.Email,
+		Id:           user.Id,
+		IsChirpyUser: user.IsRedUser,
 	}
 	respondWithJson(w, http.StatusOK, response)
 }
@@ -152,6 +180,7 @@ func (a *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 		Token        string `json:"token"`
 		RefreshToken string `json:"refresh_token"`
 		Id           int    `json:"id"`
+		IsRedUser    bool   `json:"is_chirpy_red"`
 	}
 	bodyJson := RequestBody{}
 	err := json.NewDecoder(r.Body).Decode(&bodyJson)
@@ -184,6 +213,7 @@ func (a *apiConfig) loginUser(w http.ResponseWriter, r *http.Request) {
 		Id:           user.Id,
 		Token:        tokenString,
 		RefreshToken: user.RefreshToken,
+		IsRedUser:    user.IsRedUser,
 	}
 	respondWithJson(w, http.StatusOK, response)
 }
@@ -195,8 +225,9 @@ func (a *apiConfig) createUsers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	type ResponseBody struct {
-		Email string `json:"email"`
-		Id    int    `json:"id"`
+		Email        string `json:"email"`
+		Id           int    `json:"id"`
+		IsChirpyUser bool   `json:"is_chirpy_red"`
 	}
 
 	bodyJson := RequestBody{}
@@ -208,8 +239,9 @@ func (a *apiConfig) createUsers(w http.ResponseWriter, r *http.Request) {
 
 	user, err := a.database.CreateUser(bodyJson.Email, bodyJson.Password)
 	response := ResponseBody{
-		Email: user.Email,
-		Id:    user.Id,
+		Email:        user.Email,
+		Id:           user.Id,
+		IsChirpyUser: user.IsRedUser,
 	}
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, err.Error())

@@ -81,6 +81,27 @@ func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	return chirp, nil
 }
 
+func (db *DB) DeleteChirp(id int, authorId int) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+	database, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	for key, value := range database.Chirps {
+		if value.Id == id {
+			if value.AuthorId == authorId {
+				delete(database.Chirps, key)
+				break
+			} else {
+				return errors.New("the user is not authorised to delete this")
+			}
+		}
+	}
+	db.writeDB(database)
+	return nil
+}
+
 // CreateUser creates a new user and saves it to disk
 func (db *DB) CreateUser(email string, password string) (User, error) {
 	db.mux.Lock()

@@ -233,11 +233,42 @@ func (a *apiConfig) handleIndividualChirp(w http.ResponseWriter, r *http.Request
 	switch r.Method {
 	case "GET":
 		a.fetchSingleChirp(w, r)
-	// case "DELETE":
-	// 	a.fetchChirps(w, r)
+	case "DELETE":
+		a.deleteSingleChirp(w, r)
 	default:
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+func (a *apiConfig) deleteSingleChirp(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.Atoi(r.PathValue("chirpId"))
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "provide correct id")
+		return
+	}
+	token := strings.Split(r.Header.Get("Authorization"), " ")[1]
+	claims := jwt.RegisteredClaims{}
+	tokenPointer, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte(a.jwtSecret), nil
+	})
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "the user is not authorized")
+		return
+	}
+	userId, err := tokenPointer.Claims.GetSubject()
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "the token is malformed")
+	}
+	userIdInt, err := strconv.Atoi(userId)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "sorry I messed up")
+	}
+	err = a.database.DeleteChirp(id, userIdInt)
+	if err != nil {
+		respondWithError(w, http.StatusForbidden, err.Error())
+		return
+	}
+	respondWithJson(w, http.StatusNoContent, nil)
 }
 
 func (a *apiConfig) fetchSingleChirp(w http.ResponseWriter, r *http.Request) {

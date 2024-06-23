@@ -151,16 +151,12 @@ func (a *apiConfig) updateUser(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "couldn't convert body")
 		return
 	}
-	token := strings.Split(r.Header.Get("Authorization"), " ")[1]
-	claims := jwt.RegisteredClaims{}
-	tokenPointer, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (interface{}, error) {
-		return []byte(a.jwtSecret), nil
-	})
+	claims, err := a.parseJWT(r)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "the user is not authorized")
 		return
 	}
-	id, err := tokenPointer.Claims.GetSubject()
+	id, err := claims.GetSubject()
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "the token is malformed")
 		return
@@ -288,16 +284,12 @@ func (a *apiConfig) deleteSingleChirp(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "provide correct id")
 		return
 	}
-	token := strings.Split(r.Header.Get("Authorization"), " ")[1]
-	claims := jwt.RegisteredClaims{}
-	tokenPointer, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (interface{}, error) {
-		return []byte(a.jwtSecret), nil
-	})
+	claims, err := a.parseJWT(r)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "the user is not authorized")
 		return
 	}
-	userId, err := tokenPointer.Claims.GetSubject()
+	userId, err := claims.GetSubject()
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "the token is malformed")
 	}
@@ -343,16 +335,12 @@ func (a *apiConfig) createChirps(w http.ResponseWriter, r *http.Request) {
 		respondWithError(w, http.StatusBadRequest, "Chirp is too long")
 		return
 	}
-	token := strings.Split(r.Header.Get("Authorization"), " ")[1]
-	claims := jwt.RegisteredClaims{}
-	tokenPointer, err := jwt.ParseWithClaims(token, &claims, func(t *jwt.Token) (interface{}, error) {
-		return []byte(a.jwtSecret), nil
-	})
+	claims, err := a.parseJWT(r)
 	if err != nil {
 		respondWithError(w, http.StatusUnauthorized, "the user is not authorized")
 		return
 	}
-	id, err := tokenPointer.Claims.GetSubject()
+	id, err := claims.GetSubject()
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, "the token is malformed")
 		return
@@ -422,4 +410,23 @@ func (a *apiConfig) fetchChirps(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondWithJson(w, http.StatusOK, chirps)
+}
+
+// Create a helper function to parse the JWT
+func (a *apiConfig) parseJWT(r *http.Request) (*jwt.RegisteredClaims, error) {
+	authHeader := r.Header.Get("Authorization")
+	if len(authHeader) == 0 {
+		return nil, fmt.Errorf("missing authorization header")
+	}
+	tokenString := strings.Split(authHeader, " ")[1]
+	claims := &jwt.RegisteredClaims{}
+
+	_, err := jwt.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (interface{}, error) {
+		return []byte(a.jwtSecret), nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("invalid token: %w", err)
+	}
+
+	return claims, nil
 }

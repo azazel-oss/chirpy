@@ -1,12 +1,16 @@
 package database
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -17,14 +21,17 @@ type DB struct {
 }
 
 type Chirp struct {
-	Body string `json:"body"`
-	Id   int    `json:"id"`
+	Body     string `json:"body"`
+	Id       int    `json:"id"`
+	AuthorId int    `json:"author_id"`
 }
 
 type User struct {
-	Password string `json:"password"`
-	Email    string `json:"email"`
-	Id       int    `json:"id"`
+	ExpirationTime time.Time `json:"expiration_time"`
+	Password       string    `json:"password"`
+	Email          string    `json:"email"`
+	RefreshToken   string    `json:"refresh_token"`
+	Id             int       `json:"id"`
 }
 
 type DBStructure struct {
@@ -46,7 +53,7 @@ func NewDB(path string) (*DB, error) {
 }
 
 // CreateChirp creates a new chirp and saves it to disk
-func (db *DB) CreateChirp(body string) (Chirp, error) {
+func (db *DB) CreateChirp(body string, authorId int) (Chirp, error) {
 	db.mux.Lock()
 	defer db.mux.Unlock()
 
@@ -62,8 +69,9 @@ func (db *DB) CreateChirp(body string) (Chirp, error) {
 		}
 	}
 	chirp := Chirp{
-		Body: body,
-		Id:   max + 1,
+		Body:     body,
+		Id:       max + 1,
+		AuthorId: authorId,
 	}
 	database.Chirps[chirp.Id] = chirp
 	err = db.writeDB(database)
@@ -122,7 +130,94 @@ func (db *DB) LoginUser(email string, password string) (User, error) {
 			user = value
 		}
 	}
+	if len(user.Email) <= 0 {
+		return User{}, errors.New("the user doesn't exist")
+	}
 	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	if err != nil {
+		return User{}, err
+	}
+	b := make([]byte, 32)
+	_, err = rand.Read(b)
+	if err != nil {
+		return User{}, err
+	}
+	user.RefreshToken = hex.EncodeToString(b)
+	user.ExpirationTime = time.Now().AddDate(0, 0, 60)
+	database.Users[user.Id] = user
+	db.writeDB(database)
+	return user, nil
+}
+
+func (db *DB) RevokeRefreshToken(token string) error {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+
+	database, err := db.loadDB()
+	if err != nil {
+		return err
+	}
+	user := User{}
+	for _, value := range database.Users {
+		if strings.EqualFold(value.RefreshToken, token) {
+			user = value
+		}
+	}
+	if user.Id != 0 {
+		user.RefreshToken = ""
+		user.ExpirationTime = time.Now()
+		database.Users[user.Id] = user
+		db.writeDB(database)
+	}
+	return nil
+}
+
+func (db *DB) GetUserByRefreshToken(token string) (User, error) {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+	database, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+	user := User{}
+	for _, value := range database.Users {
+		if strings.EqualFold(value.RefreshToken, token) {
+			user = value
+		}
+	}
+	return user, nil
+}
+
+// UpdateUser user updates the given user and returns the updated user
+func (db *DB) UpdateUser(id string, email string, password string) (User, error) {
+	db.mux.Lock()
+	defer db.mux.Unlock()
+	database, err := db.loadDB()
+	if err != nil {
+		return User{}, err
+	}
+	user := User{}
+	idInt, err := strconv.Atoi(id)
+	if err != nil {
+		return User{}, err
+	}
+	for _, value := range database.Users {
+		if value.Id == idInt {
+			user = value
+		}
+	}
+	if len(password) > 0 {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 10)
+		if err != nil {
+			return User{}, err
+		}
+		user.Password = string(hashedPassword)
+	}
+	if len(email) > 0 {
+		user.Email = email
+	}
+	database.Users[user.Id] = user
+	err = db.writeDB(database)
 	if err != nil {
 		return User{}, err
 	}

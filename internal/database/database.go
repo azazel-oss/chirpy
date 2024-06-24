@@ -89,16 +89,16 @@ func (db *DB) DeleteChirp(id int, authorId int) error {
 	if err != nil {
 		return err
 	}
-	for key, value := range database.Chirps {
-		if value.Id == id {
-			if value.AuthorId == authorId {
-				delete(database.Chirps, key)
-				break
-			} else {
-				return errors.New("the user is not authorised to delete this")
-			}
-		}
+
+	chirp, exists := database.Chirps[id]
+	if !exists {
+		return errors.New("chirp not found")
 	}
+	if chirp.AuthorId != authorId {
+		return errors.New("the user is not authorised to delete this chirp")
+	}
+
+	delete(database.Chirps, id)
 	db.writeDB(database)
 	return nil
 }
@@ -119,8 +119,18 @@ func (db *DB) UpgradeUserToRed(id int) error {
 			user.IsRedUser = true
 		}
 	}
-	database.Users[user.Id] = user
-	db.writeDB(database)
+
+	user, exists := database.Users[id]
+	if !exists {
+		return errors.New("user not found")
+	}
+	user.IsRedUser = true
+	database.Users[id] = user
+
+	err = db.writeDB(database)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -239,16 +249,15 @@ func (db *DB) UpdateUser(id string, email string, password string) (User, error)
 	if err != nil {
 		return User{}, err
 	}
-	user := User{}
 	idInt, err := strconv.Atoi(id)
 	if err != nil {
 		return User{}, err
 	}
-	for _, value := range database.Users {
-		if value.Id == idInt {
-			user = value
-		}
+	user, exists := database.Users[idInt]
+	if !exists {
+		return User{}, errors.New("user not found")
 	}
+
 	if len(password) > 0 {
 		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 10)
 		if err != nil {
@@ -259,7 +268,7 @@ func (db *DB) UpdateUser(id string, email string, password string) (User, error)
 	if len(email) > 0 {
 		user.Email = email
 	}
-	database.Users[user.Id] = user
+	database.Users[idInt] = user
 	err = db.writeDB(database)
 	if err != nil {
 		return User{}, err
